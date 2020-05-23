@@ -125,21 +125,24 @@ class GeneralTensorFlowNetwork(TensorFlowArchitecture):
         super().__init__(agent_parameters, spaces, name, global_network,
                          network_is_local, network_is_trainable)
 
-        def fill_return_types():
-            ret_dict = {}
-            for cls in get_all_subclasses(PredictionType):
-                ret_dict[cls] = []
-            components = self.input_embedders + [self.middleware] + self.output_heads
-            for component in components:
-                if not hasattr(component, 'return_type'):
-                    raise ValueError("{} has no return_type attribute. This should not happen.")
-                if component.return_type is not None:
-                    ret_dict[component.return_type].append(component)
-
-            return ret_dict
-
-        self.available_return_types = fill_return_types()
+        self.available_return_types = self._available_return_types()
         self.is_training = None
+
+    def _available_return_types(self):
+        ret_dict = {cls: [] for cls in get_all_subclasses(PredictionType)}
+
+        components = self.input_embedders + [self.middleware] + self.output_heads
+        for component in components:
+            if not hasattr(component, 'return_type'):
+                raise ValueError((
+                    "{} has no return_type attribute. Without this, it is "
+                    "unclear how this component should be used."
+                ).format(component))
+
+            if component.return_type is not None:
+                ret_dict[component.return_type].append(component)
+
+        return ret_dict
 
     def predict_with_prediction_type(self, states: Dict[str, np.ndarray],
                                      prediction_type: PredictionType) -> Dict[str, np.ndarray]:
@@ -182,6 +185,7 @@ class GeneralTensorFlowNetwork(TensorFlowArchitecture):
 
         embedder_path = embedder_params.path(emb_type)
         embedder_params_copy = copy.copy(embedder_params)
+        embedder_params_copy.is_training = self.is_training
         embedder_params_copy.activation_function = utils.get_activation_function(embedder_params.activation_function)
         embedder_params_copy.input_rescaling = embedder_params_copy.input_rescaling[emb_type]
         embedder_params_copy.input_offset = embedder_params_copy.input_offset[emb_type]
@@ -201,6 +205,7 @@ class GeneralTensorFlowNetwork(TensorFlowArchitecture):
         middleware_path = middleware_params.path
         middleware_params_copy = copy.copy(middleware_params)
         middleware_params_copy.activation_function = utils.get_activation_function(middleware_params.activation_function)
+        middleware_params_copy.is_training = self.is_training
         module = dynamic_import_and_instantiate_module_from_params(middleware_params_copy, path=middleware_path)
         return module
 
@@ -215,11 +220,12 @@ class GeneralTensorFlowNetwork(TensorFlowArchitecture):
         head_path = head_params.path
         head_params_copy = copy.copy(head_params)
         head_params_copy.activation_function = utils.get_activation_function(head_params_copy.activation_function)
+        head_params_copy.is_training = self.is_training
         return dynamic_import_and_instantiate_module_from_params(head_params_copy, path=head_path, extra_kwargs={
             'agent_parameters': self.ap, 'spaces': self.spaces, 'network_name': self.network_wrapper_name,
             'head_idx': head_idx, 'is_local': self.network_is_local})
 
-    def get_model(self):
+    def get_model(self) -> List:
         # validate the configuration
         if len(self.network_parameters.input_embedders_parameters) == 0:
             raise ValueError("At least one input type should be defined")
@@ -335,9 +341,22 @@ class GeneralTensorFlowNetwork(TensorFlowArchitecture):
 
                         head_count += 1
 
+        # model weights
+        if not self.distributed_training or self.network_is_global:
+            self.weights = [var for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.full_name) if
+                            'global_step' not in var.name]
+        else:
+            self.weights = [var for var in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.full_name)]
+
         # Losses
         self.losses = tf.losses.get_losses(self.full_name)
-        self.losses += tf.losses.get_regularization_losses(self.full_name)
+
+        # L2 regularization
+        if self.network_parameters.l2_regularization != 0:
+            self.l2_regularization = tf.add_n([tf.nn.l2_loss(v) for v in self.weights]) \
+                                     * self.network_parameters.l2_regularization
+            self.losses += self.l2_regularization
+
         self.total_loss = tf.reduce_sum(self.losses)
         # tf.summary.scalar('total_loss', self.total_loss)
 
@@ -382,6 +401,8 @@ class GeneralTensorFlowNetwork(TensorFlowArchitecture):
                                                                         options={'maxiter': 25})
             else:
                 raise Exception("{} is not a valid optimizer type".format(self.network_parameters.optimizer_type))
+
+        return self.weights
 
     def __str__(self):
         result = []

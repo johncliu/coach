@@ -42,13 +42,14 @@ class PartialDiscreteActionSpaceMap(ActionFilter):
         if not self.target_actions:
             raise ValueError("The target actions were not set")
         for v in self.target_actions:
-            if not output_action_space.val_matches_space_definition(v):
+            if not output_action_space.contains(v):
                 raise ValueError("The values in the output actions ({}) do not match the output action "
                                  "space definition ({})".format(v, output_action_space))
 
     def get_unfiltered_action_space(self, output_action_space: ActionSpace) -> DiscreteActionSpace:
         self.output_action_space = output_action_space
-        self.input_action_space = DiscreteActionSpace(len(self.target_actions), self.descriptions)
+        self.input_action_space = DiscreteActionSpace(len(self.target_actions), self.descriptions,
+                                                      filtered_action_space=output_action_space)
         return self.input_action_space
 
     def filter(self, action: ActionType) -> ActionType:

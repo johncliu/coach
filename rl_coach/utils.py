@@ -17,7 +17,6 @@
 import importlib
 import importlib.util
 import inspect
-import json
 import os
 import re
 import signal
@@ -85,19 +84,6 @@ def is_empty(str):
     return str == 0 or len(str.replace("'", "").replace("\"", "")) == 0
 
 
-def read_json(filename):
-    # read json file
-    with open(filename, 'r') as f:
-        dict = json.loads(f.read())
-        return dict
-
-
-def write_json(filename, dict):
-    # read json file
-    with open(filename, 'w') as f:
-        f.write(json.dumps(dict, indent=4))
-
-
 def path_is_valid_dir(path):
     return os.path.isdir(path)
 
@@ -153,7 +139,7 @@ def ClassToDict(x):
 
 
 def cmd_line_run(result, run_cmd, id=-1):
-    p = Popen(run_cmd, shell=True, executable="/bin/bash")
+    p = Popen(run_cmd, shell=True, executable="bash")
     while result[0] is None or result[0] == [None]:
         if id in killed_processes:
             p.kill()
@@ -234,7 +220,7 @@ def force_list(var):
 
 
 def squeeze_list(var):
-    if len(var) == 1:
+    if type(var) == list and len(var) == 1:
         return var[0]
     else:
         return var
@@ -546,3 +532,18 @@ def start_shell_command_and_wait(command):
 
 def indent_string(string):
     return '\t' + string.replace('\n', '\n\t')
+
+def get_latest_checkpoint(checkpoint_dir: str, checkpoint_prefix: str, checkpoint_file_extension: str) -> str:
+    latest_checkpoint_id = -1
+    latest_checkpoint = ''
+    # get all checkpoint files
+    for fname in os.listdir(checkpoint_dir):
+        path = os.path.join(checkpoint_dir, fname)
+        if os.path.isdir(path) or fname.split('.')[-1] != checkpoint_file_extension or checkpoint_prefix not in fname:
+            continue
+        checkpoint_id = int(fname.split('_')[0])
+        if checkpoint_id > latest_checkpoint_id:
+            latest_checkpoint = fname
+            latest_checkpoint_id = checkpoint_id
+
+    return latest_checkpoint

@@ -50,7 +50,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 install_requires = list()
 extras = dict()
-excluded_packages = ['wxPython', 'kubernetes', 'tensorflow'] if slim_package else []
+excluded_packages = ['kubernetes', 'tensorflow'] if slim_package else []
 
 with open(path.join(here, 'requirements.txt'), 'r') as f:
     for line in f:
@@ -68,14 +68,16 @@ if not using_GPU:
     if not slim_package:
         # For linux wth no GPU, we install the Intel optimized version of TensorFlow
         if sys.platform == "linux" or sys.platform == "linux2":
-            subprocess.check_call(['pip install '
-                                   'https://storage.googleapis.com/intel-optimized-tensorflow/tensorflow-1.11.0-cp35-cp35m-linux_x86_64.whl'],
-                                  shell=True)
-        install_requires.append('tensorflow>=1.9.0')
+            # CI: limiting version to 1.13.1 due to
+            # https://github.com/tensorflow/tensorflow/issues/29617
+            # (reproduced with intel-tensorflow 1.14.0 but not with 1.13.1)
+            install_requires.append('intel-tensorflow==1.13.1')
+        else:
+            install_requires.append('tensorflow>=1.9.0,<=1.14.0')
     extras['mxnet'] = ['mxnet-mkl>=1.3.0']
 else:
     if not slim_package:
-        install_requires.append('tensorflow-gpu>=1.9.0')
+        install_requires.append('tensorflow-gpu>=1.9.0,<=1.14.0')
     extras['mxnet'] = ['mxnet-cu90mkl>=1.3.0']
 
 all_deps = []
@@ -86,7 +88,7 @@ extras['all'] = all_deps
 
 setup(
     name='rl-coach' if not slim_package else 'rl-coach-slim',
-    version='0.11.0',
+    version='1.0.1',
     description='Reinforcement Learning Coach enables easy experimentation with state of the art Reinforcement Learning algorithms.',
     url='https://github.com/NervanaSystems/coach',
     author='Intel AI Lab',

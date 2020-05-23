@@ -338,11 +338,14 @@ class InputFilter(Filter):
                             state_object[observation_name] = filtered_observations[i]
 
         # filter reward
-        for f in filtered_data:
-            filtered_reward = f.reward
-            for filter in self._reward_filters.values():
-                filtered_reward = filter.filter(filtered_reward, update_internal_state)
-            f.reward = filtered_reward
+        for filter in self._reward_filters.values():
+            if filter.supports_batching:
+                filtered_rewards = filter.filter([f.reward for f in filtered_data], update_internal_state)
+                for d, filtered_reward in zip(filtered_data, filtered_rewards):
+                    d.reward = filtered_reward
+            else:
+                for d in filtered_data:
+                    d.reward = filter.filter(d.reward, update_internal_state)
 
         return filtered_data
 
@@ -466,14 +469,14 @@ class InputFilter(Filter):
         if self.name is not None:
             checkpoint_prefix = '.'.join([checkpoint_prefix, self.name])
         for filter_name, filter in self._reward_filters.items():
-            checkpoint_prefix = '.'.join([checkpoint_prefix, 'reward_filters', filter_name])
-            filter.save_state_to_checkpoint(checkpoint_dir, checkpoint_prefix)
+            curr_reward_filter_ckpt_prefix = '.'.join([checkpoint_prefix, 'reward_filters', filter_name])
+            filter.save_state_to_checkpoint(checkpoint_dir, curr_reward_filter_ckpt_prefix)
 
         for observation_name, filters_dict in self._observation_filters.items():
             for filter_name, filter in filters_dict.items():
-                checkpoint_prefix = '.'.join([checkpoint_prefix, 'observation_filters', observation_name,
+                curr_obs_filter_ckpt_prefix = '.'.join([checkpoint_prefix, 'observation_filters', observation_name,
                                                                  filter_name])
-                filter.save_state_to_checkpoint(checkpoint_dir, checkpoint_prefix)
+                filter.save_state_to_checkpoint(checkpoint_dir, curr_obs_filter_ckpt_prefix)
 
     def restore_state_from_checkpoint(self, checkpoint_dir, checkpoint_prefix)->None:
         """
@@ -486,14 +489,14 @@ class InputFilter(Filter):
         if self.name is not None:
             checkpoint_prefix = '.'.join([checkpoint_prefix, self.name])
         for filter_name, filter in self._reward_filters.items():
-            checkpoint_prefix = '.'.join([checkpoint_prefix, 'reward_filters', filter_name])
-            filter.restore_state_from_checkpoint(checkpoint_dir, checkpoint_prefix)
+            curr_reward_filter_ckpt_prefix = '.'.join([checkpoint_prefix, 'reward_filters', filter_name])
+            filter.restore_state_from_checkpoint(checkpoint_dir, curr_reward_filter_ckpt_prefix)
 
         for observation_name, filters_dict in self._observation_filters.items():
             for filter_name, filter in filters_dict.items():
-                checkpoint_prefix = '.'.join([checkpoint_prefix, 'observation_filters', observation_name,
+                curr_obs_filter_ckpt_prefix = '.'.join([checkpoint_prefix, 'observation_filters', observation_name,
                                                                  filter_name])
-                filter.restore_state_from_checkpoint(checkpoint_dir, checkpoint_prefix)
+                filter.restore_state_from_checkpoint(checkpoint_dir, curr_obs_filter_ckpt_prefix)
 
 
 class NoInputFilter(InputFilter):

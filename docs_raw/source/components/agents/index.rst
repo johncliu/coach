@@ -14,6 +14,7 @@ A detailed description of those algorithms can be found by navigating to each of
    :caption: Agents
 
    policy_optimization/ac
+   policy_optimization/acer
    imitation/bc
    value_optimization/bs_dqn
    value_optimization/categorical_dqn
@@ -33,6 +34,10 @@ A detailed description of those algorithms can be found by navigating to each of
    policy_optimization/ppo
    value_optimization/rainbow
    value_optimization/qr_dqn
+   policy_optimization/sac
+   policy_optimization/td3
+   policy_optimization/wolpertinger
+
 
 
 .. autoclass:: rl_coach.base_parameters.AgentParameters

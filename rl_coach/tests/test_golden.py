@@ -33,7 +33,7 @@ import pytest
 from rl_coach.logger import screen
 
 
-def read_csv_paths(test_path, filename_pattern, read_csv_tries=100):
+def read_csv_paths(test_path, filename_pattern, read_csv_tries=200):
     csv_paths = []
     tries_counter = 0
     while not csv_paths:
@@ -100,7 +100,7 @@ def preset_name(request):
 
 
 @pytest.mark.golden_test
-def test_preset_reward(preset_name, no_progress_bar=False, time_limit=60 * 60, verbose=False):
+def test_preset_reward(preset_name, no_progress_bar=True, time_limit=60 * 60, verbose=True):
     preset_validation_params = validation_params(preset_name)
 
     win_size = 10
@@ -140,7 +140,7 @@ def test_preset_reward(preset_name, no_progress_bar=False, time_limit=60 * 60, v
     test_passed = False
 
     # get the csv with the results
-    csv_paths = read_csv_paths(test_path, filename_pattern)
+    csv_paths = read_csv_paths(test_path, filename_pattern, read_csv_tries=preset_validation_params.read_csv_tries)
 
     if csv_paths:
         csv_path = csv_paths[0]
@@ -155,7 +155,7 @@ def test_preset_reward(preset_name, no_progress_bar=False, time_limit=60 * 60, v
         if not no_progress_bar:
             print_progress(averaged_rewards, last_num_episodes, preset_validation_params, start_time, time_limit)
 
-        while csv is None or (csv['Episode #'].values[
+        while csv is None or (csv[csv.columns[0]].values[
                                   -1] < preset_validation_params.max_episodes_to_achieve_reward and time.time() - start_time < time_limit):
             try:
                 csv = pd.read_csv(csv_path)
@@ -179,10 +179,10 @@ def test_preset_reward(preset_name, no_progress_bar=False, time_limit=60 * 60, v
             if not no_progress_bar:
                 print_progress(averaged_rewards, last_num_episodes, preset_validation_params, start_time, time_limit)
 
-            if csv['Episode #'].shape[0] - last_num_episodes <= 0:
+            if csv[csv.columns[0]].shape[0] - last_num_episodes <= 0:
                 continue
 
-            last_num_episodes = csv['Episode #'].values[-1]
+            last_num_episodes = csv[csv.columns[0]].values[-1]
 
             # check if reward is enough
             if np.any(averaged_rewards >= preset_validation_params.min_reward_threshold):
@@ -213,6 +213,7 @@ def test_preset_reward(preset_name, no_progress_bar=False, time_limit=60 * 60, v
                 preset_validation_params.min_reward_threshold), crash=False)
             screen.error("averaged_rewards: {}".format(averaged_rewards), crash=False)
             screen.error("episode number: {}".format(csv['Episode #'].values[-1]), crash=False)
+            screen.error("training iteration: {}".format(csv['Training Iter'].values[-1]), crash=False)
         else:
             screen.error("csv file never found", crash=False)
             if verbose:
@@ -221,7 +222,8 @@ def test_preset_reward(preset_name, no_progress_bar=False, time_limit=60 * 60, v
 
     shutil.rmtree(test_path)
     os.remove(log_file_name)
-    return test_passed
+    if not test_passed:
+        raise ValueError('golden test failed')
 
 
 def main():
@@ -278,8 +280,9 @@ def main():
                 continue
 
             test_count += 1
-            test_passed = test_preset_reward(preset_name, args.no_progress_bar, args.time_limit, args.verbose)
-            if not test_passed:
+            try:
+                test_preset_reward(preset_name, args.no_progress_bar, args.time_limit, args.verbose)
+            except Exception as e:
                 fail_count += 1
 
     screen.separator()

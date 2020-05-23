@@ -26,7 +26,7 @@ from rl_coach.spaces import SpacesDefinition, BoxActionSpace, DiscreteActionSpac
 class QHead(Head):
     def __init__(self, agent_parameters: AgentParameters, spaces: SpacesDefinition, network_name: str,
                  head_idx: int = 0, loss_weight: float = 1., is_local: bool = True, activation_function: str='relu',
-                 dense_layer=Dense):
+                 dense_layer=Dense, output_bias_initializer=None):
         super().__init__(agent_parameters, spaces, network_name, head_idx, loss_weight, is_local, activation_function,
                          dense_layer=dense_layer)
         self.name = 'q_values_head'
@@ -34,15 +34,27 @@ class QHead(Head):
             self.num_actions = 1
         elif isinstance(self.spaces.action, DiscreteActionSpace):
             self.num_actions = len(self.spaces.action.actions)
+        else:
+            raise ValueError(
+                'QHead does not support action spaces of type: {class_name}'.format(
+                    class_name=self.spaces.action.__class__.__name__,
+                )
+            )
         self.return_type = QActionStateValue
         if agent_parameters.network_wrappers[self.network_name].replace_mse_with_huber_loss:
             self.loss_type = tf.losses.huber_loss
         else:
             self.loss_type = tf.losses.mean_squared_error
 
+        self.output_bias_initializer = output_bias_initializer
+
     def _build_module(self, input_layer):
         # Standard Q Network
-        self.output = self.dense_layer(self.num_actions)(input_layer, name='output')
+        self.q_values = self.output = self.dense_layer(self.num_actions)\
+            (input_layer, name='output', bias_initializer=self.output_bias_initializer)
+
+        # used in batch-rl to estimate a probablity distribution over actions
+        self.softmax = self.add_softmax_with_temperature()
 
     def __str__(self):
         result = [
@@ -50,4 +62,8 @@ class QHead(Head):
         ]
         return '\n'.join(result)
 
+    def add_softmax_with_temperature(self):
+        temperature = self.ap.network_wrappers[self.network_name].softmax_temperature
+        temperature_scaled_outputs = self.q_values / temperature
+        return tf.nn.softmax(temperature_scaled_outputs, name="softmax")
 
